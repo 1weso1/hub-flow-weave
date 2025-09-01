@@ -18,11 +18,17 @@ const buttonVariants = cva(
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
+        // Custom automation hub variants
+        neon: "bg-gradient-primary text-primary-foreground hover:shadow-neon font-semibold",
+        glass: "glass-card text-foreground hover:bg-card-glass/20 border-border/20",
+        hero: "bg-gradient-primary text-primary-foreground hover:shadow-neon font-bold text-base px-8 py-6 rounded-xl",
+        accent: "bg-gradient-secondary text-accent-foreground hover:shadow-[0_0_20px_hsl(var(--neon-purple)/0.3)] font-semibold"
       },
       size: {
         default: "h-10 px-4 py-2",
         sm: "h-9 rounded-md px-3",
         lg: "h-11 rounded-md px-8",
+        xl: "h-14 rounded-lg px-10 text-lg",
         icon: "h-10 w-10",
       },
     },
