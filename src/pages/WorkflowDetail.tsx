@@ -1,258 +1,183 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
-import { useToast } from '@/hooks/use-toast';
-import { WorkflowPreview } from '@/components/WorkflowPreview';
-import { 
-  ArrowLeft,
-  Download,
-  Heart,
-  Share,
-  Calendar,
-  Package,
-  Users,
-  Zap,
-  Shield,
-  Info
-} from 'lucide-react';
+import { useEffect, useState } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, Download, ExternalLink } from "lucide-react";
+import { toast } from "sonner";
+import N8nPreview from "@/components/N8nPreview";
 
-interface WorkflowType {
+// Remove old n8n-demo declarations as we're using React Flow now
+
+interface Workflow {
   id: string;
   name: string;
   category: string;
-  complexity: string;
   node_count: number;
   has_credentials: boolean;
-  size_bytes: number;
-  updated_at: string;
-  created_at: string;
-  slug: string;
+  raw_url: string;
+  complexity: string;
 }
 
-export default function WorkflowDetail() {
-  const { slug } = useParams<{ slug: string }>();
-  const { user } = useAuth();
-  const { toast } = useToast();
-  
-  const [workflow, setWorkflow] = useState<WorkflowType | null>(null);
+interface WorkflowData {
+  name: string;
+  nodes: any[];
+  connections: any;
+  active?: boolean;
+  settings?: any;
+  staticData?: any;
+  pinData?: any;
+  versionId?: string;
+  meta?: any;
+  tags?: any[];
+}
+
+const WorkflowDetail = () => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [workflow, setWorkflow] = useState<Workflow | null>(null);
+  const [workflowData, setWorkflowData] = useState<WorkflowData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isFavorite, setIsFavorite] = useState(false);
-  const [downloadCount, setDownloadCount] = useState(0);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  // Remove old n8n-demo component loading logic
 
   useEffect(() => {
-    if (slug) {
-      fetchWorkflow();
-    }
-  }, [slug]);
-
-  useEffect(() => {
-    if (workflow && user) {
-      checkFavorite();
-      fetchDownloadCount();
-    }
-  }, [workflow, user]);
-
-  const fetchWorkflow = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('workflows')
-        .select('*')
-        .eq('slug', slug)
-        .single();
-      
-      if (error) throw error;
-      setWorkflow(data);
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: "Workflow not found",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const checkFavorite = async () => {
-    if (!user || !workflow) return;
+    if (!id) return;
     
-    try {
-      const { data, error } = await supabase
-        .from('workflow_favorites')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('workflow_id', workflow.id)
-        .single();
+    const fetchWorkflow = async () => {
+      try {
+        console.log('Fetching workflow with ID:', id);
         
-      setIsFavorite(!!data && !error);
-    } catch (error) {
-      // Not a favorite
-      setIsFavorite(false);
-    }
+        const response = await fetch(
+          `https://ugjeubqwmgnqvohmrkyv.supabase.co/rest/v1/workflows?select=id,name,category,node_count,has_credentials,raw_url,complexity&id=eq.${id}`,
+          {
+            headers: {
+              'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVnamV1YnF3bWducXZvaG1ya3l2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY0Nzc5NDEsImV4cCI6MjA3MjA1Mzk0MX0.esXYyxM-eQbKBXhG2NKrzLsdiveNo4lBsK_rlv_ebjo',
+              'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVnamV1YnF3bWducXZvaG1ya3l2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY0Nzc5NDEsImV4cCI6MjA3MjA1Mzk0MX0.esXYyxM-eQbKBXhG2NKrzLsdiveNo4lBsK_rlv_ebjo`
+            },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch workflow: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('Workflow metadata response:', data);
+        
+        if (data.length === 0) {
+          console.error('Workflow not found');
+          toast.error("Workflow not found");
+          return;
+        }
+
+        const workflowInfo = data[0];
+        console.log('Workflow info:', workflowInfo);
+        setWorkflow(workflowInfo);
+        
+        // Fetch the actual workflow JSON data
+        if (workflowInfo.raw_url) {
+          console.log('Fetching workflow JSON from:', workflowInfo.raw_url);
+          setDataLoading(true);
+          setPreviewError(null);
+          
+          try {
+            const workflowResponse = await fetch(workflowInfo.raw_url);
+            console.log('Workflow JSON response status:', workflowResponse.status);
+            
+            if (workflowResponse.ok) {
+              const workflowJson = await workflowResponse.json();
+              console.log('Workflow JSON data:', workflowJson);
+              console.log('Workflow has nodes:', !!workflowJson?.nodes);
+              console.log('Node count:', workflowJson?.nodes?.length);
+              
+              // Validate workflow structure
+              if (!workflowJson || !workflowJson.nodes || !Array.isArray(workflowJson.nodes)) {
+                throw new Error('Invalid workflow structure: missing or invalid nodes array');
+              }
+              
+              setWorkflowData(workflowJson);
+            } else {
+              throw new Error(`Failed to fetch workflow JSON: ${workflowResponse.status} ${workflowResponse.statusText}`);
+            }
+          } catch (error) {
+            console.error('Error fetching workflow data:', error);
+            setPreviewError(error instanceof Error ? error.message : 'Unknown error occurred');
+            toast.error("Failed to load workflow preview");
+          } finally {
+            setDataLoading(false);
+          }
+        } else {
+          console.warn('No raw_url provided for workflow');
+          setPreviewError('No workflow data URL available');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        setPreviewError(error instanceof Error ? error.message : 'Failed to load workflow');
+        toast.error("Failed to load workflow");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchWorkflow();
+  }, [id]);
+
+  const getComplexityColor = (complexity: string, nodeCount: number) => {
+    const enhancedComplexity = getEnhancedComplexity(nodeCount);
+    if (enhancedComplexity === 'low') return "bg-green-500/20 text-green-400 border-green-500/30";
+    if (enhancedComplexity === 'medium') return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
+    return "bg-red-500/20 text-red-400 border-red-500/30";
   };
 
-  const fetchDownloadCount = async () => {
-    if (!workflow) return;
+  const getEnhancedComplexity = (nodeCount: number) => {
+    if (nodeCount <= 5) return 'low';
+    if (nodeCount <= 15) return 'medium';
+    return 'high';
+  };
+
+  const getComplexityLabel = (nodeCount: number) => {
+    const complexity = getEnhancedComplexity(nodeCount);
+    return complexity.charAt(0).toUpperCase() + complexity.slice(1);
+  };
+
+  const getTriggerType = (workflow: Workflow) => {
+    // Simple heuristic based on category or name
+    if (workflow.name.toLowerCase().includes('webhook')) return "Webhook";
+    if (workflow.name.toLowerCase().includes('manual')) return "Manual";
+    if (workflow.name.toLowerCase().includes('schedule')) return "Scheduled";
+    if (workflow.node_count === 1) return "Manual";
+    if (workflow.node_count > 10) return "Complex";
+    return "Simple";
+  };
+
+  const downloadWorkflow = () => {
+    if (!workflowData || !workflow) return;
     
-    try {
-      const { count, error } = await supabase
-        .from('workflow_downloads')
-        .select('*', { count: 'exact', head: true })
-        .eq('workflow_id', workflow.id);
-        
-      if (!error) {
-        setDownloadCount(count || 0);
-      }
-    } catch (error) {
-      console.error('Failed to fetch download count:', error);
-    }
-  };
-
-  const toggleFavorite = async () => {
-    if (!user || !workflow) {
-      toast({
-        title: "Sign in required",
-        description: "Please sign in to add favorites",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      if (isFavorite) {
-        const { error } = await supabase
-          .from('workflow_favorites')
-          .delete()
-          .eq('user_id', user.id)
-          .eq('workflow_id', workflow.id);
-          
-        if (error) throw error;
-        setIsFavorite(false);
-        
-        toast({
-          title: "Removed from favorites",
-          description: "Workflow removed from your favorites",
-        });
-      } else {
-        const { error } = await supabase
-          .from('workflow_favorites')
-          .insert({
-            user_id: user.id,
-            workflow_id: workflow.id
-          });
-          
-        if (error) throw error;
-        setIsFavorite(true);
-        
-        toast({
-          title: "Added to favorites",
-          description: "Workflow added to your favorites",
-        });
-      }
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: "Failed to update favorites",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const downloadWorkflow = async () => {
-    if (!user || !workflow) {
-      toast({
-        title: "Sign in required",
-        description: "Please sign in to download workflows",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      // Record the download
-      await supabase
-        .from('workflow_downloads')
-        .insert({
-          user_id: user.id,
-          workflow_id: workflow.id
-        });
-
-      // Mock workflow JSON structure
-      const workflowData = {
-        name: workflow.name,
-        category: workflow.category,
-        complexity: workflow.complexity,
-        node_count: workflow.node_count,
-        has_credentials: workflow.has_credentials,
-        created_at: workflow.created_at,
-        updated_at: workflow.updated_at,
-        // Mock workflow structure - in reality this would come from the raw_url
-        nodes: Array.from({ length: workflow.node_count }, (_, i) => ({
-          id: `node-${i + 1}`,
-          type: 'default',
-          position: { x: Math.random() * 400, y: Math.random() * 300 },
-          data: { label: `Node ${i + 1}` }
-        })),
-        connections: []
-      };
-
-      const blob = new Blob([JSON.stringify(workflowData, null, 2)], {
-        type: 'application/json'
-      });
-      
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${workflow.slug}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      // Update download count
-      setDownloadCount(prev => prev + 1);
-
-      toast({
-        title: "Download started",
-        description: `Downloaded ${workflow.name}`,
-      });
-    } catch (error: any) {
-      toast({
-        title: "Download failed",
-        description: "Failed to download workflow",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const shareWorkflow = () => {
-    navigator.clipboard.writeText(window.location.href);
-    toast({
-      title: "Link copied",
-      description: "Workflow link copied to clipboard",
-    });
-  };
-
-  const getComplexityColor = (complexity: string) => {
-    switch (complexity.toLowerCase()) {
-      case 'easy': return 'bg-green-500/20 text-green-400 border-green-500/20';
-      case 'medium': return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/20';
-      case 'advanced': return 'bg-red-500/20 text-red-400 border-red-500/20';
-      default: return 'bg-gray-500/20 text-gray-400 border-gray-500/20';
-    }
+    const dataStr = JSON.stringify(workflowData, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    
+    const exportFileDefaultName = `${workflow.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.json`;
+    
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
+    
+    toast.success("Workflow downloaded successfully");
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading workflow...</p>
+      <div className="min-h-screen pt-20 pb-16">
+        <div className="container mx-auto px-4">
+          <div className="animate-pulse">
+            <div className="h-8 bg-muted rounded w-1/3 mb-8"></div>
+            <div className="h-64 bg-muted rounded mb-8"></div>
+            <div className="h-96 bg-muted rounded"></div>
+          </div>
         </div>
       </div>
     );
@@ -260,243 +185,172 @@ export default function WorkflowDetail() {
 
   if (!workflow) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">Workflow not found</h1>
-          <p className="text-muted-foreground mb-6">The workflow you're looking for doesn't exist.</p>
-          <Link to="/workflows">
-            <Button variant="neon">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Workflows
-            </Button>
-          </Link>
+      <div className="min-h-screen pt-20 pb-16">
+        <div className="container mx-auto px-4">
+          <Button
+            variant="ghost" 
+            onClick={() => navigate('/workflows')}
+            className="mb-8 text-text-mid hover:text-text-high"
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Workflows
+          </Button>
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-text-high mb-4">Workflow Not Found</h1>
+            <p className="text-text-mid">The workflow you're looking for doesn't exist.</p>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <Link to="/workflows" className="inline-flex items-center text-muted-foreground hover:text-foreground mb-4 transition-colors">
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Workflows
-        </Link>
-        
-        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
-          <div className="flex-1 min-w-0">
-            <h1 className="text-3xl font-bold mb-3">{workflow.name}</h1>
-            
-            <div className="flex flex-wrap items-center gap-3 mb-4">
-              <Badge variant="secondary" className="text-sm">
-                {workflow.category}
-              </Badge>
-              <Badge className={`text-sm ${getComplexityColor(workflow.complexity)}`}>
-                {workflow.complexity}
-              </Badge>
-              
-              {workflow.has_credentials && (
-                <Badge variant="outline" className="text-sm border-yellow-500/20 text-yellow-400">
-                  <Shield className="w-3 h-3 mr-1" />
-                  Requires Credentials
-                </Badge>
-              )}
-            </div>
-            
-            <div className="flex flex-wrap items-center gap-6 text-sm text-muted-foreground">
-              <div className="flex items-center space-x-2">
-                <Package className="w-4 h-4" />
-                <span>{workflow.node_count} nodes</span>
-              </div>
-              
-              <div className="flex items-center space-x-2">
-                <Users className="w-4 h-4" />
-                <span>{downloadCount} downloads</span>
-              </div>
-              
-              <div className="flex items-center space-x-2">
-                <Calendar className="w-4 h-4" />
-                <span>Updated {new Date(workflow.updated_at).toLocaleDateString()}</span>
-              </div>
-              
-              <div className="flex items-center space-x-2">
-                <Zap className="w-4 h-4" />
-                <span>{(workflow.size_bytes / 1024).toFixed(1)}KB</span>
-              </div>
-            </div>
-          </div>
+    <div className="min-h-screen pt-20 pb-16">
+      <div className="container mx-auto px-4">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <Button
+            variant="ghost" 
+            onClick={() => navigate('/workflows')}
+            className="text-text-mid hover:text-text-high"
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Workflows
+          </Button>
           
-          {/* Actions */}
-          <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex gap-2">
             <Button
-              variant="glass"
-              onClick={shareWorkflow}
-            >
-              <Share className="w-4 h-4 mr-2" />
-              Share
-            </Button>
-            
-            {user && (
-              <Button
-                variant="glass"
-                onClick={toggleFavorite}
-                className={isFavorite ? 'text-red-500' : ''}
-              >
-                <Heart className={`w-4 h-4 mr-2 ${isFavorite ? 'fill-current' : ''}`} />
-                {isFavorite ? 'Favorited' : 'Add to Favorites'}
-              </Button>
-            )}
-            
-            <Button
-              variant="neon"
+              variant="outline"
               onClick={downloadWorkflow}
-              disabled={!user}
+              className="glass border-brand-primary/20 hover:border-brand-primary/40"
             >
-              <Download className="w-4 h-4 mr-2" />
-              {user ? 'Download JSON' : 'Sign In to Download'}
+              <Download className="mr-2 h-4 w-4" />
+              Download JSON
             </Button>
           </div>
         </div>
-      </div>
 
-      {/* Content Tabs */}
-      <Tabs defaultValue="preview" className="space-y-6">
-        <TabsList className="glass-card">
-          <TabsTrigger value="preview">Preview</TabsTrigger>
-          <TabsTrigger value="details">Details</TabsTrigger>
-          <TabsTrigger value="metadata">Metadata</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="preview" className="space-y-6">
-          <Card className="glass-card border-border/20">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Zap className="w-5 h-5" />
-                <span>Workflow Preview</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <WorkflowPreview workflow={workflow} />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="details" className="space-y-6">
-          <div className="grid md:grid-cols-2 gap-6">
-            <Card className="glass-card border-border/20">
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Info className="w-5 h-5" />
-                  <span>Workflow Information</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <h4 className="font-semibold mb-2">Description</h4>
-                  <p className="text-muted-foreground">
-                    A {workflow.complexity.toLowerCase()} automation workflow in the {workflow.category} category 
-                    with {workflow.node_count} nodes. 
-                    {workflow.has_credentials ? ' Requires external service credentials.' : ' No external credentials required.'}
-                  </p>
-                </div>
-                
-                <div>
-                  <h4 className="font-semibold mb-2">Use Cases</h4>
-                  <p className="text-muted-foreground">
-                    Perfect for automating {workflow.category.toLowerCase()} processes and workflows. 
-                    Suitable for {workflow.complexity === 'Easy' ? 'beginners' : workflow.complexity === 'Medium' ? 'intermediate users' : 'advanced users'}.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="glass-card border-border/20">
-              <CardHeader>
-                <CardTitle>Technical Specifications</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Complexity:</span>
-                    <p className="font-medium">{workflow.complexity}</p>
-                  </div>
-                  
-                  <div>
-                    <span className="text-muted-foreground">Node Count:</span>
-                    <p className="font-medium">{workflow.node_count}</p>
-                  </div>
-                  
-                  <div>
-                    <span className="text-muted-foreground">File Size:</span>
-                    <p className="font-medium">{(workflow.size_bytes / 1024).toFixed(1)}KB</p>
-                  </div>
-                  
-                  <div>
-                    <span className="text-muted-foreground">Category:</span>
-                    <p className="font-medium">{workflow.category}</p>
-                  </div>
-                  
-                  <div>
-                    <span className="text-muted-foreground">Downloads:</span>
-                    <p className="font-medium">{downloadCount}</p>
-                  </div>
-                  
-                  <div>
-                    <span className="text-muted-foreground">Authentication:</span>
-                    <p className="font-medium">{workflow.has_credentials ? 'Required' : 'Not Required'}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="metadata" className="space-y-6">
-          <Card className="glass-card border-border/20">
-            <CardHeader>
-              <CardTitle>Workflow Metadata</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div>
-                    <span className="text-sm text-muted-foreground">Workflow ID:</span>
-                    <p className="font-mono text-sm">{workflow.id}</p>
-                  </div>
-                  
-                  <div>
-                    <span className="text-sm text-muted-foreground">Slug:</span>
-                    <p className="font-mono text-sm">{workflow.slug}</p>
-                  </div>
-                  
-                  <div>
-                    <span className="text-sm text-muted-foreground">Created Date:</span>
-                    <p className="text-sm">{new Date(workflow.created_at).toLocaleString()}</p>
-                  </div>
-                </div>
-                
-                <div className="space-y-4">
-                  <div>
-                    <span className="text-sm text-muted-foreground">Last Updated:</span>
-                    <p className="text-sm">{new Date(workflow.updated_at).toLocaleString()}</p>
-                  </div>
-                  
-                  <div>
-                    <span className="text-sm text-muted-foreground">File Size (bytes):</span>
-                    <p className="font-mono text-sm">{workflow.size_bytes.toLocaleString()}</p>
-                  </div>
-                  
-                  <div>
-                    <span className="text-sm text-muted-foreground">Total Downloads:</span>
-                    <p className="text-sm">{downloadCount}</p>
-                  </div>
-                </div>
+        {/* Workflow Info */}
+        <Card className="glass border-brand-primary/20 p-6 mb-8">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h1 className="text-3xl font-bold text-text-high mb-2">{workflow.name}</h1>
+              <div className="flex items-center gap-3 text-sm text-text-mid">
+                <span>ID: {workflow.id}</span>
+                <span>•</span>
+                <span>Category: {workflow.category}</span>
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <Badge variant={workflow.has_credentials ? "destructive" : "default"}>
+                {workflow.has_credentials ? "Has Credentials" : "No Credentials"}
+              </Badge>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-text-mid">Nodes:</span>
+              <Badge variant="outline" className="border-brand-accent/30">
+                {workflow.node_count}
+              </Badge>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <span className="text-text-mid">Type:</span>
+              <Badge variant="outline" className="border-brand-accent/30">
+                {getTriggerType(workflow)}
+              </Badge>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <span className="text-text-mid">Complexity:</span>
+              <Badge className={getComplexityColor(workflow.complexity, workflow.node_count)}>
+                {getComplexityLabel(workflow.node_count)}
+              </Badge>
+            </div>
+          </div>
+        </Card>
+
+        {/* Workflow Preview */}
+        <Card className="glass border-brand-primary/20 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-text-high">Workflow Preview</h2>
+            <div className="text-sm text-text-mid">
+              {dataLoading ? 'Loading preview...' : 'Interactive • Zoom & Pan Enabled'}
+            </div>
+          </div>
+          
+          {workflowData ? (
+            <N8nPreview workflow={workflowData} height="600px" />
+          ) : dataLoading ? (
+            <div className="bg-card rounded-lg border border-brand-primary/20 p-12 text-center" style={{ height: '600px' }}>
+              <div className="animate-pulse">
+                <div className="text-text-mid mb-4">Loading workflow preview...</div>
+                <div className="h-64 bg-muted rounded mx-auto max-w-md"></div>
+              </div>
+            </div>
+          ) : previewError ? (
+            <div className="bg-card rounded-lg border border-brand-primary/20 p-12 text-center" style={{ height: '600px' }}>
+              <div>
+                <p className="text-red-400 mb-4">
+                  Failed to load workflow preview
+                </p>
+                <p className="text-sm text-text-mid mb-4">
+                  Error: {previewError}
+                </p>
+                {workflow?.raw_url && (
+                  <Button
+                    variant="outline"
+                    onClick={() => window.open(workflow.raw_url, '_blank')}
+                    className="glass border-brand-primary/20 hover:border-brand-primary/40 mb-2 mr-2"
+                  >
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Open Raw JSON
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  onClick={() => window.location.reload()}
+                  className="glass border-brand-primary/20 hover:border-brand-primary/40"
+                >
+                  Retry
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-card rounded-lg border border-brand-primary/20 p-12 text-center" style={{ height: '600px' }}>
+              <div>
+                <p className="text-text-mid mb-4">
+                  Preview not available for this workflow.
+                </p>
+                <p className="text-sm text-text-mid">
+                  The workflow data could not be loaded from the source.
+                </p>
+              </div>
+            </div>
+          )}
+          
+          <div className="mt-4 text-center">
+            <p className="text-sm text-text-mid mb-2">
+              This is a read-only preview. Click and drag to pan, scroll to zoom.
+            </p>
+            <Button
+              variant="link" 
+              className="text-brand-accent hover:text-brand-primary"
+              asChild
+            >
+              <Link to="/workflows">
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Browse More Workflows
+              </Link>
+            </Button>
+          </div>
+        </Card>
+      </div>
     </div>
   );
-}
+};
+
+export default WorkflowDetail;
