@@ -320,10 +320,13 @@ const N8nPreviewContent: React.FC<N8nPreviewProps> = ({ workflow, className, hei
   }, [workflow]);
 
   const parseWorkflow = useCallback(() => {
+    console.log('N8nPreview: parseWorkflow called with:', workflow);
     if (!workflow?.nodes) {
-      console.error('No nodes found in workflow');
+      console.error('N8nPreview: No nodes found in workflow', { workflow });
       return;
     }
+    
+    console.log('N8nPreview: Processing workflow with', workflow.nodes.length, 'nodes');
 
     // Detect start/trigger nodes
     const startNodeTypes = workflow.nodes.filter(node => 
