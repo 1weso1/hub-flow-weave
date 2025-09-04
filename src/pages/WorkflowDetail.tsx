@@ -79,34 +79,71 @@ const WorkflowDetail = () => {
         
         // Fetch the actual workflow JSON data
         if (workflowInfo.raw_url) {
-          console.log('Fetching workflow JSON from:', workflowInfo.raw_url);
+          console.log('Starting to fetch workflow JSON from:', workflowInfo.raw_url);
           setDataLoading(true);
           setPreviewError(null);
           
           try {
-            const workflowResponse = await fetch(workflowInfo.raw_url);
-            console.log('Workflow JSON response status:', workflowResponse.status);
+            console.log('Making fetch request...');
+            const workflowResponse = await fetch(workflowInfo.raw_url, {
+              method: 'GET',
+              headers: {
+                'Accept': 'application/json',
+              },
+            });
+            console.log('Workflow JSON response received:', {
+              status: workflowResponse.status,
+              statusText: workflowResponse.statusText,
+              ok: workflowResponse.ok,
+              headers: Object.fromEntries(workflowResponse.headers.entries())
+            });
             
             if (workflowResponse.ok) {
+              console.log('Response OK, parsing JSON...');
               const workflowJson = await workflowResponse.json();
-              console.log('Workflow JSON data:', workflowJson);
-              console.log('Workflow has nodes:', !!workflowJson?.nodes);
-              console.log('Node count:', workflowJson?.nodes?.length);
+              console.log('Workflow JSON parsed successfully:', {
+                hasNodes: !!workflowJson?.nodes,
+                nodeCount: workflowJson?.nodes?.length,
+                hasConnections: !!workflowJson?.connections,
+                workflowName: workflowJson?.name
+              });
+              console.log('Full workflow data:', workflowJson);
               
               // Validate workflow structure
               if (!workflowJson || !workflowJson.nodes || !Array.isArray(workflowJson.nodes)) {
+                console.error('Invalid workflow structure:', {
+                  hasWorkflowJson: !!workflowJson,
+                  hasNodes: !!workflowJson?.nodes,
+                  nodesIsArray: Array.isArray(workflowJson?.nodes),
+                  nodesValue: workflowJson?.nodes
+                });
                 throw new Error('Invalid workflow structure: missing or invalid nodes array');
               }
               
+              console.log('Setting workflow data...');
               setWorkflowData(workflowJson);
+              console.log('Workflow data set successfully');
             } else {
+              console.error('Failed response:', {
+                status: workflowResponse.status,
+                statusText: workflowResponse.statusText,
+                url: workflowInfo.raw_url
+              });
+              const errorText = await workflowResponse.text().catch(() => 'Could not read error response');
+              console.error('Error response body:', errorText);
               throw new Error(`Failed to fetch workflow JSON: ${workflowResponse.status} ${workflowResponse.statusText}`);
             }
           } catch (error) {
-            console.error('Error fetching workflow data:', error);
+            console.error('Comprehensive error details:', {
+              error,
+              message: error instanceof Error ? error.message : 'Unknown error',
+              stack: error instanceof Error ? error.stack : undefined,
+              url: workflowInfo.raw_url
+            });
             setPreviewError(error instanceof Error ? error.message : 'Unknown error occurred');
-            toast.error("Failed to load workflow preview");
+            toast.error("Failed to load workflow preview: " + (error instanceof Error ? error.message : 'Unknown error'));
           } finally {
+            console.log('Fetch operation completed, setting dataLoading to false');
             setDataLoading(false);
           }
         } else {
